@@ -5,11 +5,11 @@
  */
 
 import { useState, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, Download, CheckCircle, Loader2, Music2 } from "lucide-react";
+import { RefreshCw, Wifi, WifiOff, Download, CheckCircle, Loader2, Music2, Disc3 } from "lucide-react";
 import { useServerStatus, usePlaylists, usePlaylistTracks, cacheTrack, Track, Playlist } from "@/hooks/useApi";
 import TrackCard from "@/components/TrackCard";
-import MiniPlayer from "@/components/MiniPlayer";
 import WaveformBars from "@/components/WaveformBars";
+import { Link } from "wouter";
 
 const HERO_BG = "https://private-us-east-1.manuscdn.com/sessionFile/kJCgUUTAXpuoqEBvmxyLwC/sandbox/COKVXS6RQeS4whExli8Q99-img-1_1771858798000_na1fn_bWl4ZXItaGVyby1iZw.png?x-oss-process=image/resize,w_1920,h_1920/format,webp/quality,q_80&Expires=1798761600&Policy=eyJTdGF0ZW1lbnQiOlt7IlJlc291cmNlIjoiaHR0cHM6Ly9wcml2YXRlLXVzLWVhc3QtMS5tYW51c2Nkbi5jb20vc2Vzc2lvbkZpbGUva0pDZ1VVVEFYcHVvcUVCdm14eUx3Qy9zYW5kYm94L0NPS1ZYUzZSUWVTNHdoRXhsaThROTktaW1nLTFfMTc3MTg1ODc5ODAwMF9uYTFmbl9iV2w0WlhJdGFHVnlieTFpWncucG5nP3gtb3NzLXByb2Nlc3M9aW1hZ2UvcmVzaXplLHdfMTkyMCxoXzE5MjAvZm9ybWF0LHdlYnAvcXVhbGl0eSxxXzgwIiwiQ29uZGl0aW9uIjp7IkRhdGVMZXNzVGhhbiI6eyJBV1M6RXBvY2hUaW1lIjoxNzk4NzYxNjAwfX19XX0_&Key-Pair-Id=K2HSFNDJXOU9YS&Signature=cH2RcDnlg3mwv-vUcmh31G7532z70X3mjadYLn8KSt8Uwe0ncwQYYD6-c6S-vLf6mtviWzXG8YHDn1my86AeMsZUplAt9GVbhYDZcN4VqAW9ISlu3XgPOQSP0n3KamxLfUWh19NKrxAIOp0FPO1BDRzZwf3W1KZQEX7cdKKCFD759UV9doUSZgM94n~eLHkLKB8KcWh7KrOSz5OmF3tTW3HIsy6aUthGMPAAqAAR1EUHcCyE9R84u0vX~UGSwPd0EAoe7PYNX6QsBTJQxD6xJz8iBTywnp28qgiYpovFSlULh-~c81GCmLYkpsEsY-Zme5VV5O5EggFsdyl5dlGUmA__";
 
@@ -60,6 +60,17 @@ export default function Home() {
             Персональный AI-диджей для ваших плейлистов
           </p>
 
+          {/* CTA to DJ Deck */}
+          <Link href="/dj">
+            <div
+              className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-mono font-bold uppercase tracking-widest transition-all active:scale-95"
+              style={{ background: "#00FF8818", border: "1px solid #00FF8844", color: "#00FF88" }}
+            >
+              <Disc3 className="w-3.5 h-3.5" />
+              Открыть DJ Стол
+            </div>
+          </Link>
+
           {/* Server status */}
           <div className="mt-5 flex items-center gap-2">
             {statusLoading ? (
@@ -87,7 +98,7 @@ export default function Home() {
       </header>
 
       {/* ── MAIN CONTENT ── */}
-      <main className="flex-1 px-4 pb-28">
+      <main className="flex-1 px-4 pb-24">
 
         {/* Offline warning */}
         {statusError && (
@@ -214,12 +225,7 @@ export default function Home() {
         )}
       </main>
 
-      {/* ── MINI PLAYER ── */}
-      <MiniPlayer
-        track={currentTrack}
-        playlist={tracks}
-        onTrackChange={setCurrentTrack}
-      />
+
     </div>
   );
 }
