@@ -1,0 +1,26 @@
+{
+  "name": "AI Микшер — Яндекс Музыка",
+  "short_name": "AI Микшер",
+  "description": "Персональный AI-диджей для плейлистов Яндекс Музыки",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0A0A0A",
+  "theme_color": "#0A0A0A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663175539117/QdNTQlgkWjNcISMY.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://files.manuscdn.com/user_upload_by_module/session_file/310519663175539117/PXZGzunsQKoAPHfq.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["music", "entertainment"],
+  "lang": "ru"
+}
