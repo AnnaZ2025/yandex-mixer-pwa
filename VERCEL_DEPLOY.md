@@ -1,65 +1,22 @@
-# Деплой AI Микшер на Vercel
+# AI Микшер — Инструкция по запуску и деплою
 
-## Что нужно перед деплоем
+## Ссылка на приложение
 
-1. Аккаунт на [vercel.com](https://vercel.com)
-2. Репозиторий на GitHub с кодом проекта
-3. ngrok запущен на Mac с командой:
-   ```
-   ngrok http --domain=aortal-unoxygenized-herma.ngrok-free.dev 8000
-   ```
+🎧 **https://yandex-mixer-pwa.vercel.app**
 
 ---
 
-## Шаг 1: Экспорт кода на GitHub
+## Что нужно для работы
 
-В Manus откройте **Management UI → Settings → GitHub** и нажмите **Export to GitHub**.
-Это создаст приватный репозиторий с полным кодом проекта.
-
----
-
-## Шаг 2: Импорт на Vercel
-
-1. Зайдите на [vercel.com/new](https://vercel.com/new)
-2. Нажмите **Import Git Repository**
-3. Выберите репозиторий `yandex-mixer-pwa`
-4. Vercel автоматически определит настройки из `vercel.json`
+1. Mac с запущенным бэкендом (FastAPI)
+2. ngrok туннель (статичный домен)
+3. iPhone с Safari для установки PWA
 
 ---
 
-## Шаг 3: Переменные окружения
+## Ежедневный запуск (Mac)
 
-В разделе **Environment Variables** добавьте:
-
-| Переменная | Значение |
-|---|---|
-| `VITE_API_BASE_URL` | `https://aortal-unoxygenized-herma.ngrok-free.dev` |
-
-Остальные переменные (`VITE_ANALYTICS_*`) можно оставить пустыми.
-
----
-
-## Шаг 4: Deploy
-
-Нажмите **Deploy**. Через ~1 минуту приложение будет доступно по адресу вида:
-`https://yandex-mixer-pwa.vercel.app`
-
----
-
-## Шаг 5: Установка на iPhone
-
-1. Откройте URL приложения в Safari на iPhone
-2. Нажмите кнопку **Поделиться** (квадрат со стрелкой вверх)
-3. Выберите **На экран «Домой»**
-4. Нажмите **Добавить**
-
-Приложение установится как PWA с иконкой на рабочем столе.
-
----
-
-## Важно: ngrok должен работать
-
-Бэкенд (FastAPI на Mac) должен быть запущен при каждом использовании приложения:
+Каждый раз перед использованием приложения запустите на Mac два терминала:
 
 ```bash
 # Терминал 1: запустить бэкенд
@@ -75,6 +32,41 @@ ngrok http --domain=aortal-unoxygenized-herma.ngrok-free.dev 8000
 
 ---
 
-## Обновление приложения
+## Установка на iPhone
 
-При изменении кода достаточно сделать `git push` в репозиторий — Vercel автоматически пересоберёт и задеплоит новую версию.
+1. Откройте **https://yandex-mixer-pwa.vercel.app** в Safari на iPhone
+2. Нажмите кнопку **Поделиться** (квадрат со стрелкой вверх)
+3. Выберите **На экран «Домой»**
+4. Нажмите **Добавить**
+
+Приложение установится как PWA с иконкой на рабочем столе.
+
+---
+
+## Обновление приложения (если нужно передеплоить)
+
+При изменении кода в Manus:
+1. Сохраните чекпоинт в Manus
+2. Vercel автоматически подхватит изменения из GitHub и пересоберёт проект
+
+---
+
+## Технические детали
+
+| Компонент | Адрес |
+|---|---|
+| Фронтенд (Vercel) | https://yandex-mixer-pwa.vercel.app |
+| Бэкенд (ngrok) | https://aortal-unoxygenized-herma.ngrok-free.dev |
+| GitHub репозиторий | https://github.com/AnnaZ2025/yandex-mixer-pwa |
+| Локальный бэкенд | http://localhost:8000 |
+
+---
+
+## Как задеплоить заново (если понадобится)
+
+1. Зайдите на [vercel.com/new](https://vercel.com/new)
+2. Нажмите **Import Git Repository** → выберите `AnnaZ2025/yandex-mixer-pwa`
+3. В разделе **Environment Variables** добавьте:
+   - `VITE_API_BASE_URL` = `https://aortal-unoxygenized-herma.ngrok-free.dev`
+4. Нажмите **Deploy**
+5. В Settings → Deployment Protection → отключите **Vercel Authentication**

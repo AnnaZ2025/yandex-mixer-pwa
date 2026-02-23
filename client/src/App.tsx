@@ -6,7 +6,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import DJDeck from "./pages/DJDeck";
-import { Music2, Disc3 } from "lucide-react";
+import Guide from "./pages/Guide";
+import { Music2, Disc3, BookOpen } from "lucide-react";
 
 function BottomNav() {
   const [location] = useLocation();
@@ -44,6 +45,18 @@ function BottomNav() {
           DJ Стол
         </span>
       </Link>
+      <Link href="/guide" className="flex-1 flex flex-col items-center gap-1 py-3 transition-opacity">
+        <BookOpen
+          className="w-5 h-5"
+          style={{ color: location === "/guide" ? "#00FF88" : "#444" }}
+        />
+        <span
+          className="text-[9px] uppercase tracking-widest"
+          style={{ color: location === "/guide" ? "#00FF88" : "#444" }}
+        >
+          Справка
+        </span>
+      </Link>
     </nav>
   );
 }
@@ -55,6 +68,7 @@ function Router() {
         <Switch>
           <Route path="/" component={Home} />
           <Route path="/dj" component={DJDeck} />
+          <Route path="/guide" component={Guide} />
           <Route path="/404" component={NotFound} />
           <Route component={NotFound} />
         </Switch>
