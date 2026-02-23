@@ -16,8 +16,8 @@
  *
  * Design: Dark Studio — #080808 bg, #00FF88 accent, JetBrains Mono
  */
-import { useState, useCallback, useEffect } from "react";
-import { Zap, Music, ArrowLeftRight, HelpCircle, RotateCcw } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { Zap, Music, ArrowLeftRight, HelpCircle, RotateCcw, Shuffle } from "lucide-react";
 import { engine } from "@/lib/audioEngine";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import DeckPanel from "@/components/DeckPanel";
@@ -35,11 +35,32 @@ interface AiState {
   urgency: "info" | "good" | "warning" | "danger";
 }
 
+/** Плавно анимирует кроссфейдер от from до to за durationMs миллисекунд */
+function animateCrossfader(from: number, to: number, durationMs: number, onDone?: () => void) {
+  const startTime = performance.now();
+  const step = (now: number) => {
+    const elapsed = now - startTime;
+    const t = Math.min(elapsed / durationMs, 1);
+    // ease-in-out cubic
+    const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    const value = from + (to - from) * eased;
+    engine.setCrossfader(value);
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      onDone?.();
+    }
+  };
+  requestAnimationFrame(step);
+}
+
 export default function DJDeck() {
   const state = useAudioEngine();
   const [selectorTarget, setSelectorTarget] = useState<SelectorTarget>(null);
   const [syncPulse, setSyncPulse] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [autoMixActive, setAutoMixActive] = useState(false);
+  const autoMixRef = useRef(false);
   const [aiState, setAiState] = useState<AiState>({
     message: "Загрузи треки на обе деки, чтобы начать микс",
     color: "#666",
@@ -66,7 +87,11 @@ export default function DJDeck() {
     let color = "#666";
     let urgency: AiState["urgency"] = "info";
 
-    if (!state.deckA.trackId && !state.deckB.trackId) {
+    if (autoMixRef.current) {
+      message = "AUTO MIX активен — плавный переход идёт...";
+      color = "#00FF88";
+      urgency = "good";
+    } else if (!state.deckA.trackId && !state.deckB.trackId) {
       message = "Нажми на блок с «+» на Деке A, чтобы выбрать первый трек";
       color = "#666";
       urgency = "info";
@@ -83,7 +108,7 @@ export default function DJDeck() {
       color = "#00FF88";
       urgency = "good";
     } else if (state.deckA.isPlaying && !state.deckB.isPlaying) {
-      message = "Дека A играет. Нажми ▶ на Деке B, затем начинай двигать фейдер";
+      message = "Дека A играет. Нажми AUTO MIX для автоматического перехода на B";
       color = "#FFB800";
       urgency = "warning";
     } else if (hintA === "urgent") {
@@ -95,11 +120,11 @@ export default function DJDeck() {
       color = "#FF4444";
       urgency = "danger";
     } else if (hintA === "now" && state.crossfader < 0.3) {
-      message = "Хороший момент! Плавно тяни фейдер вправо для перехода на B";
+      message = "Хороший момент! Нажми AUTO MIX или тяни фейдер вправо";
       color = "#00FF88";
       urgency = "good";
     } else if (hintB === "now" && state.crossfader > 0.7) {
-      message = "Хороший момент! Плавно тяни фейдер влево для перехода на A";
+      message = "Хороший момент! Тяни фейдер влево для перехода на A";
       color = "#00FF88";
       urgency = "good";
     } else if (score < 40 && bpmA && bpmB) {
@@ -107,11 +132,11 @@ export default function DJDeck() {
       color = "#FFB800";
       urgency = "warning";
     } else if (score >= 80) {
-      message = "Отличная совместимость! Переход будет чистым — двигай фейдер";
+      message = "Отличная совместимость! Нажми AUTO MIX для плавного перехода";
       color = "#00FF88";
       urgency = "good";
     } else if (state.deckA.isPlaying && state.deckB.isPlaying) {
-      message = "Оба трека играют — управляй фейдером для микса";
+      message = "Оба трека играют — управляй фейдером или нажми AUTO MIX";
       color = "#888";
       urgency = "info";
     } else {
@@ -121,7 +146,7 @@ export default function DJDeck() {
     }
 
     setAiState({ message, color, urgency });
-  }, [state]);
+  }, [state, autoMixActive]);
 
   const handleSync = useCallback(() => {
     const activeDeck = state.deckA.isPlaying ? "A" : "B";
@@ -130,9 +155,55 @@ export default function DJDeck() {
     setTimeout(() => setSyncPulse(false), 600);
   }, [state.deckA.isPlaying]);
 
+  /** AUTO MIX: синхронизирует BPM, запускает Деку B, плавно переходит фейдером */
+  const handleAutoMix = useCallback(() => {
+    if (autoMixRef.current) {
+      // Отменить AUTO MIX
+      autoMixRef.current = false;
+      setAutoMixActive(false);
+      return;
+    }
+
+    const deckAHasTrack = !!state.deckA.trackId;
+    const deckBHasTrack = !!state.deckB.trackId;
+
+    if (!deckAHasTrack || !deckBHasTrack) return;
+
+    autoMixRef.current = true;
+    setAutoMixActive(true);
+
+    // 1. Определяем направление: если A играет — переходим на B, иначе на A
+    const fromDeck = state.deckA.isPlaying ? "A" : "B";
+    const toDeck = fromDeck === "A" ? "B" : "A";
+    const targetCrossfader = toDeck === "B" ? 1 : 0;
+
+    // 2. Запускаем целевую деку если не играет
+    const toPlaying = toDeck === "A" ? state.deckA.isPlaying : state.deckB.isPlaying;
+    if (!toPlaying) {
+      engine.play(toDeck);
+    }
+
+    // 3. Синхронизируем BPM
+    if (state.deckA.bpm && state.deckB.bpm) {
+      engine.syncBPM(fromDeck);
+    }
+
+    // 4. Плавный переход за 20 секунд
+    const currentCrossfader = state.crossfader;
+    animateCrossfader(currentCrossfader, targetCrossfader, 20000, () => {
+      if (!autoMixRef.current) return;
+      // 5. Останавливаем исходную деку
+      engine.pause(fromDeck);
+      autoMixRef.current = false;
+      setAutoMixActive(false);
+    });
+  }, [state]);
+
   const hintA = engine.getTransitionHint("A");
   const hintB = engine.getTransitionHint("B");
   const score = engine.getCompatibilityScore();
+
+  const canAutoMix = !!state.deckA.trackId && !!state.deckB.trackId;
 
   const urgencyBg: Record<AiState["urgency"], string> = {
     info: "#0a0a0a",
@@ -171,6 +242,23 @@ export default function DJDeck() {
               <span className="text-zinc-700">BPM</span>
             </div>
           )}
+
+          {/* Auto Mix button */}
+          <button
+            onClick={handleAutoMix}
+            disabled={!canAutoMix}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition-all active:scale-95 disabled:opacity-30"
+            style={{
+              background: autoMixActive ? "#00FF8825" : "#1a1a1a",
+              border: `1px solid ${autoMixActive ? "#00FF88" : "#2a2a2a"}`,
+              color: autoMixActive ? "#00FF88" : "#555",
+              minWidth: "80px",
+              minHeight: "36px",
+            }}
+          >
+            <Shuffle className={`w-3 h-3 ${autoMixActive ? "animate-pulse" : ""}`} />
+            {autoMixActive ? "STOP" : "AUTO"}
+          </button>
 
           {/* Sync button */}
           <button
@@ -251,7 +339,7 @@ export default function DJDeck() {
             }}
           >
             <Zap
-              className={`w-4 h-4 ${aiState.urgency === "danger" ? "animate-pulse" : ""}`}
+              className={`w-4 h-4 ${aiState.urgency === "danger" || autoMixActive ? "animate-pulse" : ""}`}
               style={{ color: aiState.color }}
             />
           </div>
@@ -290,7 +378,7 @@ export default function DJDeck() {
               { icon: "🎚️", text: "Фейдер = переход A→B" },
               { icon: "🎛️", text: "EQ крутится вверх/вниз" },
               { icon: "⚡", text: "SYNC выравнивает BPM" },
-              { icon: "💡", text: "AI подскажет момент" },
+              { icon: "🔀", text: "AUTO = плавный переход 20с" },
             ].map((item, i) => (
               <div
                 key={i}
