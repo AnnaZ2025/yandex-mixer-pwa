@@ -6,7 +6,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-// В режиме разработки — localhost, в продакшне — ngrok URL из env
+// В режиме разработки — localhost, в продакшне — ngrok URL из env (обновлено: статичный домен)
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
 
 // Заголовки для обхода страницы предупреждения ngrok
