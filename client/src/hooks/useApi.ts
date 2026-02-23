@@ -9,6 +9,18 @@ import { useState, useEffect, useCallback } from "react";
 // В режиме разработки — localhost, в продакшне — ngrok URL из env
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
 
+// Заголовки для обхода страницы предупреждения ngrok
+const NGROK_HEADERS: HeadersInit = API_BASE.includes("ngrok")
+  ? { "ngrok-skip-browser-warning": "true" }
+  : {};
+
+function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+  return fetch(url, {
+    ...options,
+    headers: { ...NGROK_HEADERS, ...(options?.headers || {}) },
+  });
+}
+
 export interface Playlist {
   kind: number;
   title: string;
@@ -42,7 +54,7 @@ export function useServerStatus() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/status`);
+      const res = await apiFetch(`${API_BASE}/api/status`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setStatus(data);
@@ -67,7 +79,7 @@ export function usePlaylists() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetch(`${API_BASE}/api/playlists`)
+    apiFetch(`${API_BASE}/api/playlists`)
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();
@@ -90,7 +102,7 @@ export function usePlaylistTracks(playlistKind: number | null) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/playlists/${kind}`);
+      const res = await apiFetch(`${API_BASE}/api/playlists/${kind}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setTracks(data);
@@ -110,7 +122,7 @@ export function usePlaylistTracks(playlistKind: number | null) {
 }
 
 export async function cacheTrack(trackId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/tracks/${trackId}/cache`, { method: "POST" });
+  const res = await apiFetch(`${API_BASE}/api/tracks/${trackId}/cache`, { method: "POST" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
