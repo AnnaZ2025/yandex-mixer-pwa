@@ -1,9 +1,10 @@
 /**
  * TrackSelector — модальный экран выбора трека.
  * Сразу показывает все закэшированные треки без шага выбора плейлиста.
+ * Поддерживает поиск по названию и исполнителю.
  */
-import { useState, useEffect, useCallback } from "react";
-import { X, Loader2, CheckCircle, Music } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { X, Loader2, CheckCircle, Music, Search, Zap } from "lucide-react";
 import { engine } from "@/lib/audioEngine";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
@@ -28,12 +29,15 @@ interface Track {
   cover_uri: string | null;
   is_cached: boolean;
   cache_url: string | null;
+  bpm?: number | null;
 }
 
 interface Props {
   deck: "A" | "B";
   apiBase: string;
   onClose: () => void;
+  /** BPM of the other deck for compatibility scoring */
+  referenceBpm?: number | null;
 }
 
 function formatDuration(ms: number): string {
@@ -43,11 +47,30 @@ function formatDuration(ms: number): string {
   return `${m}:${sec.toString().padStart(2, "0")}`;
 }
 
-export default function TrackSelector({ deck, apiBase, onClose }: Props) {
+/** Calculate BPM compatibility score 0–100 */
+function bpmScore(bpmA: number | null | undefined, bpmB: number | null | undefined): number | null {
+  if (!bpmA || !bpmB) return null;
+  const diff = Math.abs(bpmA - bpmB);
+  // also check half/double tempo
+  const diffHalf = Math.abs(bpmA - bpmB / 2);
+  const diffDouble = Math.abs(bpmA - bpmB * 2);
+  const minDiff = Math.min(diff, diffHalf, diffDouble);
+  if (minDiff === 0) return 100;
+  if (minDiff <= 3) return 95;
+  if (minDiff <= 8) return 80;
+  if (minDiff <= 15) return 60;
+  if (minDiff <= 25) return 35;
+  return 15;
+}
+
+export default function TrackSelector({ deck, apiBase, onClose, referenceBpm }: Props) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingTrackId, setLoadingTrackId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
   const accent = deck === "A" ? "#00FF88" : "#FF6B35";
 
   useEffect(() => {
@@ -60,13 +83,37 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
       })
       .then((data: Track[]) => setTracks(data))
       .catch(e => setError("Не удалось загрузить треки: " + e.message))
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        // Focus search after load
+        setTimeout(() => searchRef.current?.focus(), 100);
+      });
   }, [apiBase]);
+
+  const filtered = useMemo(() => {
+    let list = tracks;
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = list.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        t.artists.some(a => a.toLowerCase().includes(q)) ||
+        t.album.toLowerCase().includes(q)
+      );
+    }
+    // Sort by BPM compatibility if referenceBpm is provided
+    if (referenceBpm) {
+      list = [...list].sort((a, b) => {
+        const scoreA = bpmScore(referenceBpm, a.bpm) ?? 0;
+        const scoreB = bpmScore(referenceBpm, b.bpm) ?? 0;
+        return scoreB - scoreA;
+      });
+    }
+    return list;
+  }, [tracks, query, referenceBpm]);
 
   const selectTrack = useCallback(async (track: Track) => {
     setLoadingTrackId(track.id);
     try {
-      // cache_url may be relative ("/api/cached_tracks/ID") or absolute
       const url = track.cache_url
         ? (track.cache_url.startsWith("http") ? track.cache_url : `${apiBase}${track.cache_url}`)
         : `${apiBase}/api/cached_tracks/${track.id}`;
@@ -79,7 +126,6 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
       onClose();
     } catch (e) {
       console.error("loadTrack error:", e);
-      // Close anyway so user isn't stuck
       onClose();
     } finally {
       setLoadingTrackId(null);
@@ -119,6 +165,35 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
         </button>
       </div>
 
+      {/* Search bar */}
+      {!loading && !error && tracks.length > 0 && (
+        <div className="px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
+          <div
+            className="flex items-center gap-2 px-3 py-2 rounded-xl"
+            style={{ background: "#111", border: `1px solid ${query ? accent + "40" : "#222"}` }}
+          >
+            <Search className="w-4 h-4 flex-shrink-0" style={{ color: query ? accent : "#444" }} />
+            <input
+              ref={searchRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Поиск по названию или исполнителю..."
+              className="flex-1 bg-transparent text-sm text-white placeholder-zinc-600 outline-none font-mono"
+              style={{ minWidth: 0 }}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="flex-shrink-0 text-zinc-600 hover:text-zinc-400 transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {loading && (
@@ -150,9 +225,17 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
           </div>
         )}
 
-        {!loading && !error && tracks.length > 0 && (
+        {!loading && !error && tracks.length > 0 && filtered.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 px-6 text-center">
+            <Search className="w-8 h-8 text-zinc-700" />
+            <p className="text-sm font-semibold text-zinc-500">Ничего не найдено</p>
+            <p className="text-xs text-zinc-600">Попробуйте другой запрос</p>
+          </div>
+        )}
+
+        {!loading && !error && filtered.length > 0 && (
           <div className="flex flex-col divide-y" style={{ borderColor: "#111" }}>
-            {tracks.map(track => (
+            {filtered.map(track => (
               <button
                 key={track.id}
                 onClick={() => selectTrack(track)}
@@ -179,11 +262,23 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
                   <p className="text-xs text-zinc-500 truncate mt-0.5">
                     {track.artists?.join(", ") || "Unknown"}
                   </p>
-                  {track.duration_ms > 0 && (
-                    <p className="text-[10px] font-mono mt-1" style={{ color: `${accent}60` }}>
-                      {formatDuration(track.duration_ms)}
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2 mt-1">
+                    {track.duration_ms > 0 && (
+                      <p className="text-[10px] font-mono" style={{ color: `${accent}60` }}>
+                        {formatDuration(track.duration_ms)}
+                      </p>
+                    )}
+                    {referenceBpm && track.bpm && (() => {
+                      const s = bpmScore(referenceBpm, track.bpm);
+                      if (!s) return null;
+                      const color = s >= 80 ? "#00FF88" : s >= 50 ? "#FFB800" : "#FF4444";
+                      return (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: `${color}15`, color, border: `1px solid ${color}30` }}>
+                          {track.bpm} BPM · {s}%
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
                 <div className="flex-shrink-0 ml-2">
                   {loadingTrackId === track.id ? (
@@ -205,7 +300,10 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
           style={{ borderColor: "#1a1a1a" }}
         >
           <p className="text-[10px] font-mono text-zinc-600">
-            {tracks.length} {tracks.length === 1 ? "трек" : tracks.length < 5 ? "трека" : "треков"} в кэше
+            {query
+              ? `${filtered.length} из ${tracks.length} треков`
+              : `${tracks.length} ${tracks.length === 1 ? "трек" : tracks.length < 5 ? "трека" : "треков"} в кэше`
+            }
           </p>
         </div>
       )}

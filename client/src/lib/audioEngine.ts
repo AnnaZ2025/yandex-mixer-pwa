@@ -36,6 +36,13 @@ export interface DeckState {
   mid: number;
   treble: number;
   volume: number;
+  /** Cue point in seconds */
+  cuePoint: number | null;
+  /** Loop: null = off, [start, end] in seconds */
+  loop: [number, number] | null;
+  loopActive: boolean;
+  /** Pitch shift ratio (1.0 = normal) */
+  pitch: number;
 }
 
 export interface EngineState {
@@ -62,6 +69,10 @@ const DEFAULT_DECK: DeckState = {
   mid: 0.5,
   treble: 0.5,
   volume: 1,
+  cuePoint: null,
+  loop: null,
+  loopActive: false,
+  pitch: 1.0,
 };
 
 type StateListener = (state: EngineState) => void;
@@ -193,6 +204,14 @@ class AudioEngine {
         waveformData,
         bpm,
       });
+
+      // Save BPM to backend metadata for future recommendations
+      if (bpm && meta.trackId) {
+        fetch(`${_API_BASE}/api/tracks/${meta.trackId}/bpm?bpm=${bpm}`, {
+          method: "PATCH",
+          headers: { ..._NGROK_HEADERS },
+        }).catch(() => {}); // fire-and-forget, ignore errors
+      }
     } catch (e) {
       console.error("Failed to load track:", e);
       this.updateDeck(deck, { isLoading: false });
@@ -294,6 +313,59 @@ class AudioEngine {
     this.notify();
   }
 
+  // ─── Cue points ───────────────────────────────────────────────────────────
+
+  setCue(deck: "A" | "B") {
+    const d = deck === "A" ? this.state.deckA : this.state.deckB;
+    const t = d.currentTime;
+    this.updateDeck(deck, { cuePoint: t });
+  }
+
+  jumpToCue(deck: "A" | "B") {
+    const d = deck === "A" ? this.state.deckA : this.state.deckB;
+    if (d.cuePoint !== null) this.seek(deck, d.cuePoint);
+  }
+
+  // ─── Loop ─────────────────────────────────────────────────────────────────
+
+  setLoop(deck: "A" | "B", bars: number = 4) {
+    const d = deck === "A" ? this.state.deckA : this.state.deckB;
+    if (!d.bpm) return;
+    const barDuration = (60 / d.bpm) * 4; // 4 beats per bar
+    const start = d.currentTime;
+    const end = Math.min(start + barDuration * bars, d.duration);
+    this.updateDeck(deck, { loop: [start, end], loopActive: true });
+    // Restart playback from loop start
+    this.seek(deck, start);
+    if (!d.isPlaying) this.play(deck);
+  }
+
+  toggleLoop(deck: "A" | "B") {
+    const d = deck === "A" ? this.state.deckA : this.state.deckB;
+    if (!d.loop) {
+      this.setLoop(deck, 4);
+    } else {
+      this.updateDeck(deck, { loopActive: !d.loopActive });
+    }
+  }
+
+  clearLoop(deck: "A" | "B") {
+    this.updateDeck(deck, { loop: null, loopActive: false });
+  }
+
+  // ─── Pitch control ────────────────────────────────────────────────────────
+
+  updateDeckBPM(deck: "A" | "B", bpm: number) {
+    this.updateDeck(deck, { bpm });
+  }
+
+  setPitch(deck: "A" | "B", ratio: number) {
+    const clamped = Math.max(0.5, Math.min(2.0, ratio));
+    const source = deck === "A" ? this.sourceA : this.sourceB;
+    if (source) source.playbackRate.setTargetAtTime(clamped, this.ctx!.currentTime, 0.05);
+    this.updateDeck(deck, { pitch: clamped });
+  }
+
   // ─── BPM sync ─────────────────────────────────────────────────────────────
 
   syncBPM(sourceDeck: "A" | "B") {
@@ -373,6 +445,14 @@ class AudioEngine {
 
   // ─── Realtime waveform for visualiser ─────────────────────────────────────
 
+  getRealtimeFrequency(deck: "A" | "B"): Uint8Array {
+    const analyser = deck === "A" ? this.analyserA : this.analyserB;
+    if (!analyser) return new Uint8Array(0);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    return data;
+  }
+
   getRealtimeWaveform(deck: "A" | "B"): Uint8Array {
     const analyser = deck === "A" ? this.analyserA : this.analyserB;
     if (!analyser) return new Uint8Array(0);
@@ -435,6 +515,11 @@ class AudioEngine {
           this.ctx.currentTime - this.startTimeA,
           this.state.deckA.duration
         );
+        // Loop enforcement
+        if (this.state.deckA.loopActive && this.state.deckA.loop) {
+          const [ls, le] = this.state.deckA.loop;
+          if (t >= le - 0.05) { this.seek("A", ls); return; }
+        }
         if (Math.abs(t - this.state.deckA.currentTime) > 0.1) {
           this.state = {
             ...this.state,
@@ -450,6 +535,11 @@ class AudioEngine {
           this.ctx.currentTime - this.startTimeB,
           this.state.deckB.duration
         );
+        // Loop enforcement
+        if (this.state.deckB.loopActive && this.state.deckB.loop) {
+          const [ls, le] = this.state.deckB.loop;
+          if (t >= le - 0.05) { this.seek("B", ls); return; }
+        }
         if (Math.abs(t - this.state.deckB.currentTime) > 0.1) {
           this.state = {
             ...this.state,

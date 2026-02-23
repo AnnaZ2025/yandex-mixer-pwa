@@ -121,6 +121,14 @@ export function usePlaylistTracks(playlistKind: number | null) {
   return { tracks, loading, error, refetch: () => playlistKind && fetchTracks(playlistKind) };
 }
 
+export interface BulkCacheStatus {
+  status: "idle" | "running" | "done" | "cancelled" | "already_running" | "started" | "empty";
+  total?: number;
+  done?: number;
+  failed?: number;
+  current?: string | null;
+}
+
 export async function cacheTrack(trackId: string): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/tracks/${trackId}/cache`, { method: "POST" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -128,6 +136,22 @@ export async function cacheTrack(trackId: string): Promise<void> {
 
 export function getCachedTrackUrl(trackId: string): string {
   return `${API_BASE}/api/cached_tracks/${trackId}.mp3`;
+}
+
+export async function startBulkCache(playlistKind: number): Promise<BulkCacheStatus> {
+  const res = await apiFetch(`${API_BASE}/api/playlists/${playlistKind}/cache_all`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function getBulkCacheStatus(playlistKind: number): Promise<BulkCacheStatus> {
+  const res = await apiFetch(`${API_BASE}/api/playlists/${playlistKind}/cache_status`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function cancelBulkCache(playlistKind: number): Promise<void> {
+  await apiFetch(`${API_BASE}/api/playlists/${playlistKind}/cache_all`, { method: "DELETE" });
 }
 
 export { API_BASE };

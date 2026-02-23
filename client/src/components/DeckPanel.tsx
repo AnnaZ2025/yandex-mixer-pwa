@@ -5,8 +5,8 @@
  *
  * Design: Dark Studio — #080808 bg, #00FF88 accent A, #FF6B35 accent B
  */
-import { useCallback } from "react";
-import { Play, Pause, SkipBack, Loader2, Plus } from "lucide-react";
+import { useCallback, useRef } from "react";
+import { Play, Pause, SkipBack, Loader2, Plus, Flag, RefreshCw } from "lucide-react";
 import { engine, DeckState } from "@/lib/audioEngine";
 import WaveformCanvas from "./WaveformCanvas";
 import EQKnob from "./EQKnob";
@@ -41,6 +41,29 @@ export default function DeckPanel({ deck, state, hint, onSelectTrack, compatibil
 
   const restart = useCallback(() => {
     engine.seek(deck, 0);
+  }, [deck]);
+
+  // Tap BPM
+  const tapTimesRef = useRef<number[]>([]);
+  const tapBPM = useCallback(() => {
+    const now = Date.now();
+    const taps = tapTimesRef.current;
+    // Reset if last tap was more than 3 seconds ago
+    if (taps.length > 0 && now - taps[taps.length - 1] > 3000) {
+      tapTimesRef.current = [];
+    }
+    tapTimesRef.current.push(now);
+    if (tapTimesRef.current.length >= 3) {
+      const intervals = [];
+      for (let i = 1; i < tapTimesRef.current.length; i++) {
+        intervals.push(tapTimesRef.current[i] - tapTimesRef.current[i - 1]);
+      }
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const bpm = Math.round(60000 / avgInterval);
+      if (bpm >= 40 && bpm <= 220) {
+        engine.updateDeckBPM(deck, bpm);
+      }
+    }
   }, [deck]);
 
   const hintConfig = {
@@ -80,6 +103,17 @@ export default function DeckPanel({ deck, state, hint, onSelectTrack, compatibil
             >
               {state.bpm} BPM
             </span>
+          )}
+          {/* TAP BPM */}
+          {state.trackId && (
+            <button
+              onClick={tapBPM}
+              className="text-[9px] font-mono px-2 py-0.5 rounded-md transition-all active:scale-95"
+              style={{ color: "#666", background: "#1a1a1a", border: "1px solid #2a2a2a" }}
+              title="Нажми в такт 3+ раза для определения BPM"
+            >
+              TAP
+            </button>
           )}
         </div>
 
@@ -253,6 +287,41 @@ export default function DeckPanel({ deck, state, hint, onSelectTrack, compatibil
               <Play className="w-6 h-6 ml-0.5" />
             )}
           </button>
+
+          {/* CUE button */}
+          <button
+            onClick={() => engine.jumpToCue(deck)}
+            onDoubleClick={() => engine.setCue(deck)}
+            disabled={!state.trackId}
+            className="flex flex-col items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-30"
+            style={{
+              width: "44px",
+              height: "44px",
+              background: state.cuePoint !== null ? `${accent}18` : "#1a1a1a",
+              border: `1px solid ${state.cuePoint !== null ? accent + "50" : "#2a2a2a"}`,
+            }}
+            title="Нажми — прыжок к CUE. Двойное нажатие — установить CUE"
+          >
+            <Flag className="w-3.5 h-3.5" style={{ color: state.cuePoint !== null ? accent : "#666" }} />
+            <span className="text-[8px] font-mono mt-0.5" style={{ color: state.cuePoint !== null ? accent : "#444" }}>CUE</span>
+          </button>
+
+          {/* LOOP button */}
+          <button
+            onClick={() => engine.toggleLoop(deck)}
+            disabled={!state.trackId || !state.bpm}
+            className="flex flex-col items-center justify-center rounded-xl transition-all active:scale-95 disabled:opacity-30"
+            style={{
+              width: "44px",
+              height: "44px",
+              background: state.loopActive ? `${accent}18` : "#1a1a1a",
+              border: `1px solid ${state.loopActive ? accent + "50" : "#2a2a2a"}`,
+            }}
+            title="4-тактовый луп"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${state.loopActive ? "animate-spin" : ""}`} style={{ color: state.loopActive ? accent : "#666", animationDuration: "2s" }} />
+            <span className="text-[8px] font-mono mt-0.5" style={{ color: state.loopActive ? accent : "#444" }}>LOOP</span>
+          </button>
         </div>
 
         {/* EQ section */}
@@ -286,6 +355,41 @@ export default function DeckPanel({ deck, state, hint, onSelectTrack, compatibil
           </div>
         </div>
       </div>
+
+      {/* ── Pitch control ───────────────────────────────────────────── */}
+      {state.trackId && (
+        <div
+          className="mx-3 mb-3 px-3 py-2 rounded-xl flex items-center gap-3"
+          style={{ background: "#111", border: "1px solid #1a1a1a" }}
+        >
+          <span className="text-[9px] font-mono text-zinc-600 uppercase tracking-widest flex-shrink-0">PITCH</span>
+          <input
+            type="range"
+            min="0.7"
+            max="1.3"
+            step="0.01"
+            value={state.pitch}
+            onChange={(e) => engine.setPitch(deck, parseFloat(e.target.value))}
+            className="flex-1 h-1 rounded-full appearance-none cursor-pointer"
+            style={{ accentColor: accent }}
+          />
+          <span
+            className="text-[10px] font-mono w-12 text-right flex-shrink-0"
+            style={{ color: state.pitch !== 1.0 ? accent : "#444" }}
+          >
+            {state.pitch > 1 ? `+${((state.pitch - 1) * 100).toFixed(0)}%` : state.pitch < 1 ? `-${((1 - state.pitch) * 100).toFixed(0)}%` : "0%"}
+          </span>
+          {state.pitch !== 1.0 && (
+            <button
+              onClick={() => engine.setPitch(deck, 1.0)}
+              className="text-[9px] font-mono flex-shrink-0 transition-colors"
+              style={{ color: `${accent}80` }}
+            >
+              RESET
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -24,6 +24,8 @@ import DeckPanel from "@/components/DeckPanel";
 import Crossfader from "@/components/Crossfader";
 import TrackSelector from "@/components/TrackSelector";
 import OnboardingOverlay from "@/components/OnboardingOverlay";
+import SpectrumVisualizer from "@/components/SpectrumVisualizer";
+import MixHistory, { saveMixEntry } from "@/components/MixHistory";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -188,11 +190,30 @@ export default function DJDeck() {
       engine.syncBPM(fromDeck);
     }
 
-    // 4. Плавный переход за 20 секунд
+    // 4. Сохраняем в историю
+    saveMixEntry({
+      trackA: {
+        id: state.deckA.trackId || "",
+        title: state.deckA.trackTitle || "",
+        artist: state.deckA.trackArtist || "",
+        coverUri: state.deckA.coverUri || null,
+        bpm: state.deckA.bpm || null,
+      },
+      trackB: {
+        id: state.deckB.trackId || "",
+        title: state.deckB.trackTitle || "",
+        artist: state.deckB.trackArtist || "",
+        coverUri: state.deckB.coverUri || null,
+        bpm: state.deckB.bpm || null,
+      },
+      crossfadeType: "auto",
+    });
+
+    // 5. Плавный переход за 20 секунд
     const currentCrossfader = state.crossfader;
     animateCrossfader(currentCrossfader, targetCrossfader, 20000, () => {
       if (!autoMixRef.current) return;
-      // 5. Останавливаем исходную деку
+      // 6. Останавливаем исходную деку
       engine.pause(fromDeck);
       autoMixRef.current = false;
       setAutoMixActive(false);
@@ -310,6 +331,15 @@ export default function DJDeck() {
           className="py-4 px-3 rounded-2xl"
           style={{ background: "#0d0d0d", border: "1px solid #1a1a1a" }}
         >
+          {/* Spectrum Visualizer */}
+          {(state.deckA.isPlaying || state.deckB.isPlaying) && (
+            <div className="mb-3 rounded-xl overflow-hidden" style={{ height: "80px" }}>
+              <SpectrumVisualizer
+                isPlayingA={state.deckA.isPlaying}
+                isPlayingB={state.deckB.isPlaying}
+              />
+            </div>
+          )}
           <Crossfader value={state.crossfader} />
         </div>
 
@@ -352,6 +382,9 @@ export default function DJDeck() {
             </p>
           </div>
         </div>
+
+        {/* Mix History */}
+        <MixHistory />
 
         {/* Quick reference card */}
         <div
@@ -398,12 +431,13 @@ export default function DJDeck() {
         <OnboardingOverlay onComplete={() => setShowOnboarding(false)} />
       )}
 
-      {/* ── Track selector modal ─────────────────────────────── */}
+      {/* ── Track selector modal ────────────────────────────────────────────── */}
       {selectorTarget && (
         <TrackSelector
           deck={selectorTarget}
           apiBase={API_BASE}
           onClose={() => setSelectorTarget(null)}
+          referenceBpm={selectorTarget === "B" ? state.deckA.bpm : state.deckB.bpm}
         />
       )}
     </div>

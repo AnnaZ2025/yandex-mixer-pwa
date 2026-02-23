@@ -4,9 +4,13 @@
  * Layout: Header → Playlist selector → Track list → Mini player (fixed bottom)
  */
 
-import { useState, useCallback } from "react";
-import { RefreshCw, Wifi, WifiOff, Download, CheckCircle, Loader2, Music2, Disc3 } from "lucide-react";
-import { useServerStatus, usePlaylists, usePlaylistTracks, cacheTrack, Track, Playlist } from "@/hooks/useApi";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { RefreshCw, Wifi, WifiOff, Download, CheckCircle, Loader2, Music2, Disc3, X, Square } from "lucide-react";
+import {
+  useServerStatus, usePlaylists, usePlaylistTracks,
+  startBulkCache, getBulkCacheStatus, cancelBulkCache,
+  Track, Playlist, BulkCacheStatus
+} from "@/hooks/useApi";
 import TrackCard from "@/components/TrackCard";
 import WaveformBars from "@/components/WaveformBars";
 import { Link } from "wouter";
@@ -19,20 +23,64 @@ export default function Home() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null);
   const { tracks, loading: tracksLoading, refetch: refetchTracks } = usePlaylistTracks(selectedPlaylist?.kind ?? null);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
-  const [cachingAll, setCachingAll] = useState(false);
+
+  // Bulk download state
+  const [bulkStatus, setBulkStatus] = useState<BulkCacheStatus | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  }, []);
+
+  const startPolling = useCallback((kind: number) => {
+    stopPolling();
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await getBulkCacheStatus(kind);
+        setBulkStatus(s);
+        if (s.status === "done" || s.status === "cancelled") {
+          stopPolling();
+          refetchTracks();
+        }
+      } catch {}
+    }, 1500);
+  }, [stopPolling, refetchTracks]);
+
+  // Stop polling when playlist changes
+  useEffect(() => {
+    stopPolling();
+    setBulkStatus(null);
+  }, [selectedPlaylist?.kind, stopPolling]);
+
+  useEffect(() => () => stopPolling(), [stopPolling]);
 
   const handleCacheAll = useCallback(async () => {
-    if (!tracks.length) return;
-    setCachingAll(true);
-    const uncached = tracks.filter(t => !t.is_cached);
-    for (const t of uncached) {
-      try { await cacheTrack(t.id); } catch {}
+    if (!selectedPlaylist) return;
+    try {
+      const res = await startBulkCache(selectedPlaylist.kind);
+      setBulkStatus(res);
+      if (res.status === "started" || res.status === "running" || res.status === "already_running") {
+        startPolling(selectedPlaylist.kind);
+      }
+    } catch (e) {
+      console.error("bulk cache error:", e);
     }
-    setCachingAll(false);
-    refetchTracks();
-  }, [tracks, refetchTracks]);
+  }, [selectedPlaylist, startPolling]);
+
+  const handleCancelBulk = useCallback(async () => {
+    if (!selectedPlaylist) return;
+    try {
+      await cancelBulkCache(selectedPlaylist.kind);
+      setBulkStatus(prev => prev ? { ...prev, status: "cancelled" } : null);
+      stopPolling();
+    } catch {}
+  }, [selectedPlaylist, stopPolling]);
 
   const cachedCount = tracks.filter(t => t.is_cached).length;
+  const isRunning = bulkStatus?.status === "running" || bulkStatus?.status === "already_running" || bulkStatus?.status === "started";
+  const bulkDone = bulkStatus?.done ?? 0;
+  const bulkTotal = bulkStatus?.total ?? tracks.length;
+  const bulkProgress = bulkTotal > 0 ? Math.round((bulkDone / bulkTotal) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -172,21 +220,68 @@ export default function Home() {
                     {cachedCount}/{tracks.length}
                     <CheckCircle size={9} className="inline ml-1 text-[#00FF88]" />
                   </span>
-                  <button
-                    onClick={handleCacheAll}
-                    disabled={cachingAll || cachedCount === tracks.length}
-                    className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-[#00FF88] transition-colors disabled:opacity-40"
-                  >
-                    {cachingAll ? (
-                      <Loader2 size={10} className="animate-spin" />
-                    ) : (
+                  {isRunning ? (
+                    <button
+                      onClick={handleCancelBulk}
+                      className="flex items-center gap-1 text-[10px] font-mono text-orange-400 hover:text-orange-300 transition-colors"
+                    >
+                      <Square size={9} />
+                      Стоп
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleCacheAll}
+                      disabled={cachedCount === tracks.length}
+                      className="flex items-center gap-1 text-[10px] font-mono text-muted-foreground hover:text-[#00FF88] transition-colors disabled:opacity-40"
+                    >
                       <Download size={10} />
-                    )}
-                    Загрузить все
-                  </button>
+                      Скачать все
+                    </button>
+                  )}
                 </div>
               )}
             </div>
+
+            {/* Bulk download progress bar */}
+            {isRunning && bulkTotal > 0 && (
+              <div className="mb-3 rounded-lg overflow-hidden" style={{ background: "#111", border: "1px solid #1a1a1a" }}>
+                <div className="px-3 py-2">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      Скачивание {bulkDone} из {bulkTotal}
+                    </span>
+                    <span className="text-[10px] font-mono text-[#00FF88]">{bulkProgress}%</span>
+                  </div>
+                  <div className="h-1 rounded-full bg-zinc-800 overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${bulkProgress}%`, background: "linear-gradient(90deg, #00FF88, #00cc6a)" }}
+                    />
+                  </div>
+                  {bulkStatus?.current && (
+                    <p className="text-[9px] font-mono text-zinc-600 mt-1 truncate">
+                      → {bulkStatus.current}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Done banner */}
+            {bulkStatus?.status === "done" && (
+              <div
+                className="mb-3 px-3 py-2 rounded-lg flex items-center gap-2"
+                style={{ background: "#00FF8810", border: "1px solid #00FF8830" }}
+              >
+                <CheckCircle size={12} className="text-[#00FF88] flex-shrink-0" />
+                <span className="text-[10px] font-mono text-[#00FF88]">
+                  Скачано {bulkStatus.done} из {bulkStatus.total} треков
+                </span>
+                <button onClick={() => setBulkStatus(null)} className="ml-auto text-zinc-600 hover:text-zinc-400">
+                  <X size={10} />
+                </button>
+              </div>
+            )}
 
             {tracksLoading ? (
               <div className="space-y-2">
@@ -224,8 +319,6 @@ export default function Home() {
           </div>
         )}
       </main>
-
-
     </div>
   );
 }
