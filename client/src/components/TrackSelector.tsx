@@ -66,7 +66,10 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
   const selectTrack = useCallback(async (track: Track) => {
     setLoadingTrackId(track.id);
     try {
-      const url = `${apiBase}/api/cached_tracks/${track.id}`;
+      // cache_url may be relative ("/api/cached_tracks/ID") or absolute
+      const url = track.cache_url
+        ? (track.cache_url.startsWith("http") ? track.cache_url : `${apiBase}${track.cache_url}`)
+        : `${apiBase}/api/cached_tracks/${track.id}`;
       await engine.loadTrack(deck, url, {
         trackId: String(track.id),
         title: track.title,
@@ -75,7 +78,9 @@ export default function TrackSelector({ deck, apiBase, onClose }: Props) {
       });
       onClose();
     } catch (e) {
-      console.error(e);
+      console.error("loadTrack error:", e);
+      // Close anyway so user isn't stuck
+      onClose();
     } finally {
       setLoadingTrackId(null);
     }
