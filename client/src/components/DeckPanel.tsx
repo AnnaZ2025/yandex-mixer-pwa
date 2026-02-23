@@ -116,7 +116,7 @@ export default function DeckPanel({ deck, state, hint, onSelectTrack, compatibil
       >
         {state.coverUri ? (
           <img
-            src={`https://${state.coverUri.replace("%%", "80x80")}`}
+            src={state.coverUri.startsWith("http") ? state.coverUri.replace("200x200", "80x80") : `https://${state.coverUri.replace("%%", "80x80")}`}
             alt=""
             className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
             style={{ boxShadow: `0 0 12px ${accent}30` }}

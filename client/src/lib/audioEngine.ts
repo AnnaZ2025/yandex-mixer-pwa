@@ -11,6 +11,15 @@
  * Значение 0 = только дека A, 1 = только дека B, 0.5 = оба 50/50.
  */
 
+const _API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || "http://127.0.0.1:8000";
+const _NGROK_HEADERS: HeadersInit = _API_BASE.includes("ngrok")
+  ? { "ngrok-skip-browser-warning": "true" }
+  : {};
+
+function _apiFetch(url: string): Promise<Response> {
+  return fetch(url, { headers: _NGROK_HEADERS });
+}
+
 export interface DeckState {
   trackId: string | null;
   trackTitle: string;
@@ -156,7 +165,7 @@ class AudioEngine {
     this.updateDeck(deck, { isLoading: true, trackId: meta.trackId, trackTitle: meta.title, trackArtist: meta.artist, coverUri: meta.coverUri });
 
     try {
-      const response = await fetch(url);
+      const response = await _apiFetch(url);
       const arrayBuffer = await response.arrayBuffer();
       const audioBuffer = await this.ctx!.decodeAudioData(arrayBuffer);
 
