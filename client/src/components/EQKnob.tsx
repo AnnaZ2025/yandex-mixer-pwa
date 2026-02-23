@@ -2,6 +2,7 @@
  * EQKnob — круглая ручка эквалайзера.
  * Управление: drag вверх/вниз или touch.
  * value: 0–1 (0.5 = нейтральное положение, 0 dB)
+ * Мобильная оптимизация: зона касания 48px+, двойной тап для сброса.
  */
 import { useRef, useCallback } from "react";
 
@@ -15,6 +16,7 @@ interface Props {
 export default function EQKnob({ label, value, onChange, color = "#00FF88" }: Props) {
   const startY = useRef<number | null>(null);
   const startVal = useRef<number>(0.5);
+  const lastTap = useRef(0);
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -36,6 +38,15 @@ export default function EQKnob({ label, value, onChange, color = "#00FF88" }: Pr
   }, [value, onChange]);
 
   const onTouchStart = useCallback((e: React.TouchEvent) => {
+    // Double tap to reset
+    const now = Date.now();
+    if (now - lastTap.current < 300) {
+      onChange(0.5);
+      lastTap.current = 0;
+      return;
+    }
+    lastTap.current = now;
+
     startY.current = e.touches[0].clientY;
     startVal.current = value;
     const onMove = (te: TouchEvent) => {
@@ -56,43 +67,54 @@ export default function EQKnob({ label, value, onChange, color = "#00FF88" }: Pr
   const rotation = (value - 0.5) * 270;
   const db = Math.round((value - 0.5) * 24);
   const dbStr = db === 0 ? "0 dB" : db > 0 ? `+${db} dB` : `${db} dB`;
+  const isCenter = Math.abs(db) <= 1;
 
   return (
     <div className="flex flex-col items-center gap-1 select-none">
+      {/* Touch target wrapper — 48x48 minimum */}
       <div
-        className="relative w-10 h-10 rounded-full cursor-grab active:cursor-grabbing"
-        style={{ background: "radial-gradient(circle at 35% 35%, #2a2a2a, #0d0d0d)", boxShadow: `0 0 0 1px #333, 0 2px 8px rgba(0,0,0,0.8)` }}
-        onMouseDown={onMouseDown}
-        onTouchStart={onTouchStart}
-        onDoubleClick={() => onChange(0.5)}
-        title="Double-click to reset"
+        className="flex items-center justify-center"
+        style={{ width: "48px", height: "48px", touchAction: "none" }}
       >
-        {/* Indicator dot */}
         <div
-          className="absolute w-1.5 h-1.5 rounded-full top-1 left-1/2 -translate-x-1/2"
+          className="relative w-11 h-11 rounded-full cursor-grab active:cursor-grabbing"
           style={{
-            background: color,
-            transformOrigin: "50% 18px",
-            transform: `translateX(-50%) rotate(${rotation}deg)`,
-            boxShadow: `0 0 4px ${color}`,
+            background: "radial-gradient(circle at 35% 35%, #2a2a2a, #0d0d0d)",
+            boxShadow: `0 0 0 1px #333, 0 2px 8px rgba(0,0,0,0.8), ${isCenter ? "none" : `0 0 12px ${color}20`}`,
           }}
-        />
-        {/* Ring */}
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 40 40">
-          <circle cx="20" cy="20" r="17" fill="none" stroke="#1a1a1a" strokeWidth="2" />
-          <circle
-            cx="20" cy="20" r="17"
-            fill="none"
-            stroke={color}
-            strokeWidth="2"
-            strokeDasharray={`${Math.abs(value - 0.5) * 53.4} 106.8`}
-            strokeDashoffset={value >= 0.5 ? -26.7 : 26.7 - Math.abs(value - 0.5) * 53.4}
-            opacity="0.7"
+          onMouseDown={onMouseDown}
+          onTouchStart={onTouchStart}
+          onDoubleClick={() => onChange(0.5)}
+          title="Двойное нажатие для сброса"
+        >
+          {/* Indicator dot */}
+          <div
+            className="absolute w-1.5 h-1.5 rounded-full top-1 left-1/2 -translate-x-1/2"
+            style={{
+              background: isCenter ? "#444" : color,
+              transformOrigin: "50% 18px",
+              transform: `translateX(-50%) rotate(${rotation}deg)`,
+              boxShadow: isCenter ? "none" : `0 0 4px ${color}`,
+            }}
           />
-        </svg>
+          {/* Ring */}
+          <svg className="absolute inset-0 w-full h-full" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="19" fill="none" stroke="#1a1a1a" strokeWidth="2" />
+            <circle
+              cx="22" cy="22" r="19"
+              fill="none"
+              stroke={isCenter ? "#2a2a2a" : color}
+              strokeWidth="2"
+              strokeDasharray={`${Math.abs(value - 0.5) * 59.7} 119.4`}
+              strokeDashoffset={value >= 0.5 ? -29.85 : 29.85 - Math.abs(value - 0.5) * 59.7}
+              opacity="0.7"
+              style={{ transition: "stroke 0.2s" }}
+            />
+          </svg>
+        </div>
       </div>
       <span className="text-[9px] font-mono text-zinc-500 uppercase tracking-wider">{label}</span>
-      <span className="text-[8px] font-mono" style={{ color: db === 0 ? "#555" : color }}>{dbStr}</span>
+      <span className="text-[8px] font-mono" style={{ color: isCenter ? "#555" : color }}>{dbStr}</span>
     </div>
   );
 }

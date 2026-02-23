@@ -1,36 +1,58 @@
 /**
  * DJDeck — главный экран DJ-стола.
  *
- * Компоновка (мобильная, вертикальная):
+ * Мобильная компоновка (вертикальная):
  *  ┌─────────────────────────────┐
  *  │  Header (статус + BPM sync) │
  *  ├─────────────────────────────┤
  *  │  Deck A                     │
  *  ├─────────────────────────────┤
- *  │  Crossfader                 │
+ *  │  Crossfader (крупный)       │
  *  ├─────────────────────────────┤
  *  │  Deck B                     │
  *  ├─────────────────────────────┤
  *  │  AI Assistant panel         │
  *  └─────────────────────────────┘
+ *
+ * Design: Dark Studio — #080808 bg, #00FF88 accent, JetBrains Mono
  */
 import { useState, useCallback, useEffect } from "react";
-import { Zap, Music, ArrowLeftRight } from "lucide-react";
+import { Zap, Music, ArrowLeftRight, HelpCircle, RotateCcw } from "lucide-react";
 import { engine } from "@/lib/audioEngine";
 import { useAudioEngine } from "@/hooks/useAudioEngine";
 import DeckPanel from "@/components/DeckPanel";
 import Crossfader from "@/components/Crossfader";
 import TrackSelector from "@/components/TrackSelector";
+import OnboardingOverlay from "@/components/OnboardingOverlay";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
 type SelectorTarget = "A" | "B" | null;
 
+interface AiState {
+  message: string;
+  color: string;
+  urgency: "info" | "good" | "warning" | "danger";
+}
+
 export default function DJDeck() {
   const state = useAudioEngine();
   const [selectorTarget, setSelectorTarget] = useState<SelectorTarget>(null);
-  const [aiMessage, setAiMessage] = useState<string>("Загрузи треки на обе деки, чтобы начать микс");
   const [syncPulse, setSyncPulse] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [aiState, setAiState] = useState<AiState>({
+    message: "Загрузи треки на обе деки, чтобы начать микс",
+    color: "#666",
+    urgency: "info",
+  });
+
+  // Show onboarding on first visit
+  useEffect(() => {
+    const done = localStorage.getItem("dj_onboarding_done");
+    if (!done) {
+      setShowOnboarding(true);
+    }
+  }, []);
 
   // AI assistant logic
   useEffect(() => {
@@ -40,31 +62,65 @@ export default function DJDeck() {
     const bpmA = state.deckA.bpm;
     const bpmB = state.deckB.bpm;
 
+    let message = "";
+    let color = "#666";
+    let urgency: AiState["urgency"] = "info";
+
     if (!state.deckA.trackId && !state.deckB.trackId) {
-      setAiMessage("Загрузи треки на обе деки, чтобы начать микс");
+      message = "Нажми на блок с «+» на Деке A, чтобы выбрать первый трек";
+      color = "#666";
+      urgency = "info";
     } else if (!state.deckA.trackId) {
-      setAiMessage("Загрузи трек на Деку A");
+      message = "Загрузи трек на Деку A — нажми на блок с «+»";
+      color = "#00FF88";
+      urgency = "info";
     } else if (!state.deckB.trackId) {
-      setAiMessage("Загрузи трек на Деку B — он будет следующим");
+      message = "Отлично! Теперь загрузи следующий трек на Деку B";
+      color = "#FF6B35";
+      urgency = "info";
+    } else if (!state.deckA.isPlaying && !state.deckB.isPlaying) {
+      message = "Оба трека загружены! Нажми ▶ на Деке A, чтобы начать";
+      color = "#00FF88";
+      urgency = "good";
+    } else if (state.deckA.isPlaying && !state.deckB.isPlaying) {
+      message = "Дека A играет. Нажми ▶ на Деке B, затем начинай двигать фейдер";
+      color = "#FFB800";
+      urgency = "warning";
     } else if (hintA === "urgent") {
-      setAiMessage("Трек A заканчивается! Двигай фейдер вправо прямо сейчас");
+      message = "⚡ Трек A заканчивается! Двигай фейдер вправо прямо сейчас!";
+      color = "#FF4444";
+      urgency = "danger";
     } else if (hintB === "urgent") {
-      setAiMessage("Трек B заканчивается! Двигай фейдер влево прямо сейчас");
+      message = "⚡ Трек B заканчивается! Двигай фейдер влево прямо сейчас!";
+      color = "#FF4444";
+      urgency = "danger";
     } else if (hintA === "now" && state.crossfader < 0.3) {
-      setAiMessage(`Хороший момент для перехода — плавно двигай фейдер вправо`);
+      message = "Хороший момент! Плавно тяни фейдер вправо для перехода на B";
+      color = "#00FF88";
+      urgency = "good";
     } else if (hintB === "now" && state.crossfader > 0.7) {
-      setAiMessage(`Хороший момент для перехода — плавно двигай фейдер влево`);
+      message = "Хороший момент! Плавно тяни фейдер влево для перехода на A";
+      color = "#00FF88";
+      urgency = "good";
     } else if (score < 40 && bpmA && bpmB) {
-      setAiMessage(`BPM сильно отличаются (${bpmA} vs ${bpmB}) — нажми Sync для выравнивания`);
+      message = `BPM сильно отличаются (${bpmA} vs ${bpmB}) — нажми SYNC для выравнивания`;
+      color = "#FFB800";
+      urgency = "warning";
     } else if (score >= 80) {
-      setAiMessage(`Отличная совместимость! Переход будет чистым`);
+      message = "Отличная совместимость! Переход будет чистым — двигай фейдер";
+      color = "#00FF88";
+      urgency = "good";
     } else if (state.deckA.isPlaying && state.deckB.isPlaying) {
-      setAiMessage(`Оба трека играют — управляй фейдером для микса`);
-    } else if (state.deckA.isPlaying || state.deckB.isPlaying) {
-      setAiMessage(`Запусти вторую деку и начинай переход`);
+      message = "Оба трека играют — управляй фейдером для микса";
+      color = "#888";
+      urgency = "info";
     } else {
-      setAiMessage(`Нажми Play на любой деке`);
+      message = "Нажми ▶ на любой деке";
+      color = "#666";
+      urgency = "info";
     }
+
+    setAiState({ message, color, urgency });
   }, [state]);
 
   const handleSync = useCallback(() => {
@@ -78,24 +134,22 @@ export default function DJDeck() {
   const hintB = engine.getTransitionHint("B");
   const score = engine.getCompatibilityScore();
 
-  const aiMsgColor =
-    aiMessage.includes("заканчивается") || aiMessage.includes("прямо сейчас")
-      ? "#FF4444"
-      : aiMessage.includes("Отличная") || aiMessage.includes("чистым")
-      ? "#00FF88"
-      : aiMessage.includes("Хороший")
-      ? "#FFB800"
-      : "#888";
+  const urgencyBg: Record<AiState["urgency"], string> = {
+    info: "#0a0a0a",
+    good: "#00FF8808",
+    warning: "#FFB80008",
+    danger: "#FF444412",
+  };
 
   return (
     <div
-      className="min-h-screen flex flex-col"
+      className="min-h-screen flex flex-col pb-20"
       style={{ background: "#080808", fontFamily: "'JetBrains Mono', monospace" }}
     >
-      {/* Header */}
+      {/* ── Header ───────────────────────────────────────────── */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b"
-        style={{ borderColor: "#1a1a1a", background: "#0a0a0a" }}
+        className="flex items-center justify-between px-4 py-3 sticky top-0 z-10"
+        style={{ borderBottom: "1px solid #1a1a1a", background: "#0a0a0a" }}
       >
         <div className="flex items-center gap-2">
           <Music className="w-4 h-4" style={{ color: "#00FF88" }} />
@@ -107,33 +161,53 @@ export default function DJDeck() {
         <div className="flex items-center gap-2">
           {/* BPM display */}
           {state.deckA.bpm && state.deckB.bpm && (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            <div
+              className="flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded-lg"
+              style={{ background: "#111", border: "1px solid #222" }}
+            >
               <span style={{ color: "#00FF88" }}>{state.deckA.bpm}</span>
-              <span className="text-zinc-600">BPM</span>
-              <span className="text-zinc-600">vs</span>
+              <span className="text-zinc-700">vs</span>
               <span style={{ color: "#FF6B35" }}>{state.deckB.bpm}</span>
-              <span className="text-zinc-600">BPM</span>
+              <span className="text-zinc-700">BPM</span>
             </div>
           )}
 
           {/* Sync button */}
           <button
             onClick={handleSync}
-            className="flex items-center gap-1 px-2 py-1 rounded text-[10px] font-mono font-bold uppercase tracking-wider transition-all"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono font-bold uppercase tracking-wider transition-all active:scale-95"
             style={{
-              background: syncPulse ? "#00FF8833" : "#1a1a1a",
+              background: syncPulse ? "#00FF8820" : "#1a1a1a",
               border: `1px solid ${syncPulse ? "#00FF88" : "#2a2a2a"}`,
-              color: syncPulse ? "#00FF88" : "#666",
+              color: syncPulse ? "#00FF88" : "#555",
+              minWidth: "60px",
+              minHeight: "36px",
             }}
           >
             <ArrowLeftRight className="w-3 h-3" />
             SYNC
           </button>
+
+          {/* Help button */}
+          <button
+            onClick={() => setShowOnboarding(true)}
+            className="flex items-center justify-center rounded-xl transition-all active:scale-95"
+            style={{
+              width: "36px",
+              height: "36px",
+              background: "#1a1a1a",
+              border: "1px solid #2a2a2a",
+            }}
+            aria-label="Помощь"
+          >
+            <HelpCircle className="w-4 h-4 text-zinc-500" />
+          </button>
         </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col gap-3 p-3 overflow-y-auto">
+      {/* ── Main content ─────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col gap-3 p-3">
+
         {/* Deck A */}
         <DeckPanel
           deck="A"
@@ -143,10 +217,10 @@ export default function DJDeck() {
           compatibilityScore={state.deckA.trackId && state.deckB.trackId ? score : undefined}
         />
 
-        {/* Crossfader */}
+        {/* Crossfader section */}
         <div
-          className="py-4 px-2 rounded-xl border"
-          style={{ background: "#0d0d0d", borderColor: "#1a1a1a" }}
+          className="py-4 px-3 rounded-2xl"
+          style={{ background: "#0d0d0d", border: "1px solid #1a1a1a" }}
         >
           <Crossfader value={state.crossfader} />
         </div>
@@ -162,42 +236,81 @@ export default function DJDeck() {
 
         {/* AI Assistant */}
         <div
-          className="flex items-start gap-3 p-4 rounded-xl border"
+          className="flex items-start gap-3 p-4 rounded-2xl border transition-all"
           style={{
-            background: "#0a0a0a",
-            borderColor: `${aiMsgColor}22`,
-            boxShadow: `0 0 20px ${aiMsgColor}08`,
+            background: urgencyBg[aiState.urgency],
+            borderColor: `${aiState.color}25`,
+            boxShadow: aiState.urgency === "danger" ? `0 0 20px ${aiState.color}15` : "none",
           }}
         >
           <div
-            className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-            style={{ background: `${aiMsgColor}18`, border: `1px solid ${aiMsgColor}33` }}
+            className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+            style={{
+              background: `${aiState.color}15`,
+              border: `1px solid ${aiState.color}30`,
+            }}
           >
-            <Zap className="w-3.5 h-3.5" style={{ color: aiMsgColor }} />
+            <Zap
+              className={`w-4 h-4 ${aiState.urgency === "danger" ? "animate-pulse" : ""}`}
+              style={{ color: aiState.color }}
+            />
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest mb-1">
               AI Подсказка
             </p>
-            <p className="text-sm font-medium" style={{ color: aiMsgColor }}>
-              {aiMessage}
+            <p className="text-sm font-medium leading-relaxed" style={{ color: aiState.color }}>
+              {aiState.message}
             </p>
           </div>
         </div>
 
-        {/* Tips */}
+        {/* Quick reference card */}
         <div
-          className="p-3 rounded-xl text-[10px] font-mono text-zinc-600 space-y-1"
-          style={{ background: "#0a0a0a", border: "1px solid #111" }}
+          className="p-4 rounded-2xl"
+          style={{ background: "#0a0a0a", border: "1px solid #141414" }}
         >
-          <p>• Двигай фейдер влево/вправо для перехода между треками</p>
-          <p>• Крути EQ-ручки для управления частотами (двойной клик = сброс)</p>
-          <p>• Нажми на волну для перемотки трека</p>
-          <p>• SYNC выравнивает BPM второго трека под первый</p>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-[10px] font-mono text-zinc-600 uppercase tracking-widest">
+              Быстрая справка
+            </span>
+            <button
+              onClick={() => setShowOnboarding(true)}
+              className="text-[10px] font-mono ml-auto flex items-center gap-1 transition-colors hover:text-zinc-300"
+              style={{ color: "#00FF8870" }}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Обучение
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { icon: "🎵", text: "Нажми «+» для выбора трека" },
+              { icon: "▶️", text: "Кнопка Play запускает деку" },
+              { icon: "🎚️", text: "Фейдер = переход A→B" },
+              { icon: "🎛️", text: "EQ крутится вверх/вниз" },
+              { icon: "⚡", text: "SYNC выравнивает BPM" },
+              { icon: "💡", text: "AI подскажет момент" },
+            ].map((item, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 p-2 rounded-lg"
+                style={{ background: "#111" }}
+              >
+                <span className="text-sm flex-shrink-0">{item.icon}</span>
+                <span className="text-[10px] font-mono text-zinc-500 leading-relaxed">{item.text}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Track selector modal */}
+      {/* ── Onboarding overlay ───────────────────────────────── */}
+      {showOnboarding && (
+        <OnboardingOverlay onComplete={() => setShowOnboarding(false)} />
+      )}
+
+      {/* ── Track selector modal ─────────────────────────────── */}
       {selectorTarget && (
         <TrackSelector
           deck={selectorTarget}
